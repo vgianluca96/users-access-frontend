@@ -8,6 +8,7 @@ import type {
   AccessGrantSummary,
   CapabilityDetail,
   ClientMembership,
+  OrganizationMemberSummary,
   OrganizationOverview,
   OrgMembership,
   Project,
@@ -27,6 +28,7 @@ interface AppDataLoaderProps {
  *  - the logged-in user's org/client memberships (spec003 §3 steps 1-2), by email — independent.
  *  - access grant summaries (spec003 §3 step 3), which depend on the org ids from the org-membership fetch.
  *  - projects (spec003 §3 step 4), which depend on the org ids and client ids from the two membership fetches.
+ *  - organization members (spec008 §4), which depend on the org ids from the org-membership fetch, same as access grant summaries.
  * Blocks the routed content underneath with a spinner while any of the above
  * is in flight, and with an error message if any of them fails.
  */
@@ -39,6 +41,7 @@ export function AppDataLoader({ children }: AppDataLoaderProps) {
   const rolesStatus = useAppStore((state) => state.rolesStatus);
   const capabilitiesStatus = useAppStore((state) => state.capabilitiesStatus);
   const rolePresetCapabilitiesStatus = useAppStore((state) => state.rolePresetCapabilitiesStatus);
+  const organizationMembersStatus = useAppStore((state) => state.organizationMembersStatus);
 
   const setUser = useAppStore((state) => state.setUser);
   const setOrganizations = useAppStore((state) => state.setOrganizations);
@@ -61,6 +64,8 @@ export function AppDataLoader({ children }: AppDataLoaderProps) {
   const setRolePresetCapabilitiesStatus = useAppStore(
     (state) => state.setRolePresetCapabilitiesStatus,
   );
+  const setOrganizationMembers = useAppStore((state) => state.setOrganizationMembers);
+  const setOrganizationMembersStatus = useAppStore((state) => state.setOrganizationMembersStatus);
 
   useEffect(() => {
     const user = getLoggedInUser();
@@ -151,6 +156,20 @@ export function AppDataLoader({ children }: AppDataLoaderProps) {
         .catch(() => {
           setAccessGrantSummariesStatus('error');
         });
+
+      // spec008 §4: same org-id dependency as access grant summaries above.
+      setOrganizationMembersStatus('loading');
+      apiClient
+        .get<OrganizationMemberSummary[]>('/organization-members', {
+          params: { orgIds: orgIds.join(',') },
+        })
+        .then((response) => {
+          setOrganizationMembers(response.data);
+          setOrganizationMembersStatus('success');
+        })
+        .catch(() => {
+          setOrganizationMembersStatus('error');
+        });
     });
 
     Promise.all([orgMembershipsPromise, clientMembershipsPromise]).then(
@@ -183,6 +202,8 @@ export function AppDataLoader({ children }: AppDataLoaderProps) {
     setClientMembershipsStatus,
     setOrgMemberships,
     setOrgMembershipsStatus,
+    setOrganizationMembers,
+    setOrganizationMembersStatus,
     setOrganizations,
     setOrganizationsStatus,
     setProjects,
@@ -203,6 +224,7 @@ export function AppDataLoader({ children }: AppDataLoaderProps) {
     rolesStatus,
     capabilitiesStatus,
     rolePresetCapabilitiesStatus,
+    organizationMembersStatus,
   ];
   const isLoading = statuses.some((status) => status === 'loading');
   const hasError = statuses.some((status) => status === 'error');

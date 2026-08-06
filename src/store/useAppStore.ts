@@ -3,6 +3,7 @@ import type {
   AccessGrantSummary,
   CapabilityDetail,
   ClientMembership,
+  OrganizationMemberSummary,
   OrganizationOverview,
   OrgMembership,
   Project,
@@ -31,6 +32,8 @@ interface AppState {
   capabilitiesStatus: FetchStatus;
   rolePresetCapabilities: RoleCapabilityPreset[];
   rolePresetCapabilitiesStatus: FetchStatus;
+  organizationMembers: OrganizationMemberSummary[];
+  organizationMembersStatus: FetchStatus;
   setUser: (user: User) => void;
   setOrganizations: (organizations: OrganizationOverview[]) => void;
   setOrganizationsStatus: (status: FetchStatus) => void;
@@ -40,6 +43,8 @@ interface AppState {
   setClientMembershipsStatus: (status: FetchStatus) => void;
   setAccessGrantSummaries: (accessGrantSummaries: AccessGrantSummary[]) => void;
   setAccessGrantSummariesStatus: (status: FetchStatus) => void;
+  addAccessGrantSummary: (accessGrantSummary: AccessGrantSummary) => void;
+  updateAccessGrantSummaryRole: (grantId: number, roleId: number | null, roleName: string | null) => void;
   setProjects: (projects: Project[]) => void;
   setProjectsStatus: (status: FetchStatus) => void;
   setRoles: (roles: Role[]) => void;
@@ -48,6 +53,8 @@ interface AppState {
   setCapabilitiesStatus: (status: FetchStatus) => void;
   setRolePresetCapabilities: (rolePresetCapabilities: RoleCapabilityPreset[]) => void;
   setRolePresetCapabilitiesStatus: (status: FetchStatus) => void;
+  setOrganizationMembers: (organizationMembers: OrganizationMemberSummary[]) => void;
+  setOrganizationMembersStatus: (status: FetchStatus) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -68,6 +75,8 @@ export const useAppStore = create<AppState>((set) => ({
   capabilitiesStatus: 'idle',
   rolePresetCapabilities: [],
   rolePresetCapabilitiesStatus: 'idle',
+  organizationMembers: [],
+  organizationMembersStatus: 'idle',
   setUser: (user) => set({ user }),
   setOrganizations: (organizations) => set({ organizations }),
   setOrganizationsStatus: (organizationsStatus) => set({ organizationsStatus }),
@@ -78,6 +87,20 @@ export const useAppStore = create<AppState>((set) => ({
   setAccessGrantSummaries: (accessGrantSummaries) => set({ accessGrantSummaries }),
   setAccessGrantSummariesStatus: (accessGrantSummariesStatus) =>
     set({ accessGrantSummariesStatus }),
+  // spec007 §5 Step B: appends the just-created grant returned by
+  // POST /grant-capabilities, so it shows up without a full refetch.
+  addAccessGrantSummary: (accessGrantSummary) =>
+    set((state) => ({ accessGrantSummaries: [...state.accessGrantSummaries, accessGrantSummary] })),
+  // Fix: PATCH /grant-capabilities now also persists roleId (previously
+  // silently dropped — see grant-capabilities-service.ts) — this keeps the
+  // grants table's "Preset Role" column in sync with a successful Save
+  // without needing a full GET /users-access-grants refetch.
+  updateAccessGrantSummaryRole: (grantId, roleId, roleName) =>
+    set((state) => ({
+      accessGrantSummaries: state.accessGrantSummaries.map((summary) =>
+        summary.grantId === grantId ? { ...summary, roleId, roleName } : summary,
+      ),
+    })),
   setProjects: (projects) => set({ projects }),
   setProjectsStatus: (projectsStatus) => set({ projectsStatus }),
   setRoles: (roles) => set({ roles }),
@@ -87,4 +110,6 @@ export const useAppStore = create<AppState>((set) => ({
   setRolePresetCapabilities: (rolePresetCapabilities) => set({ rolePresetCapabilities }),
   setRolePresetCapabilitiesStatus: (rolePresetCapabilitiesStatus) =>
     set({ rolePresetCapabilitiesStatus }),
+  setOrganizationMembers: (organizationMembers) => set({ organizationMembers }),
+  setOrganizationMembersStatus: (organizationMembersStatus) => set({ organizationMembersStatus }),
 }));

@@ -15,6 +15,7 @@ import {
 interface AccessGrantsTableProps {
   selectedOrgId: number | null;
   selectedClientId: number | null;
+  selectedProjectId: number | null;
   onEditGrant: (grantId: number) => void;
 }
 
@@ -22,8 +23,19 @@ interface AccessGrantsTableProps {
  * spec003 §9, ungrouped per spec006 §2: every filtered grant is a row in one
  * flat table (no more per-org/client/project sections) — Email/User Name/
  * Scope/Preset Role/Settings columns, in that order (spec006 §9).
+ *
+ * spec007 §1: `selectedProjectId` is a direct equality check, unlike the
+ * org/client filters — project is already the leaf of the scope hierarchy,
+ * so there's no "effective" walk-up needed. Like the client filter already
+ * does to org-scoped grants, this excludes every org/client-scoped grant
+ * once a project filter is active.
  */
-export function AccessGrantsTable({ selectedOrgId, selectedClientId, onEditGrant }: AccessGrantsTableProps) {
+export function AccessGrantsTable({
+  selectedOrgId,
+  selectedClientId,
+  selectedProjectId,
+  onEditGrant,
+}: AccessGrantsTableProps) {
   const accessGrantSummaries = useAppStore((state) => state.accessGrantSummaries);
   const organizations = useAppStore((state) => state.organizations);
   const projects = useAppStore((state) => state.projects);
@@ -45,9 +57,13 @@ export function AccessGrantsTable({ selectedOrgId, selectedClientId, onEditGrant
         return false;
       }
 
+      if (selectedProjectId !== null && grant.projectId !== selectedProjectId) {
+        return false;
+      }
+
       return true;
     });
-  }, [accessGrantSummaries, selectedOrgId, selectedClientId, clientsById, projectsById]);
+  }, [accessGrantSummaries, selectedOrgId, selectedClientId, selectedProjectId, clientsById, projectsById]);
 
   if (filteredGrants.length === 0) {
     return <p className="text-sm text-slate-500">No access grants match the current filter.</p>;

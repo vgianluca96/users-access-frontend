@@ -1,43 +1,59 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { faFilter } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { useAppStore } from '../store/useAppStore';
 import { useScopeFilterOptions } from '../lib/scopeFilterOptions';
+import type { MembershipStatus } from '../types';
 
-interface AccessScopeFilterProps {
+interface OrganizationMembersFilterProps {
   selectedOrgId: number | null;
   selectedClientId: number | null;
   selectedProjectId: number | null;
+  selectedStatus: MembershipStatus | null;
+  selectedCapabilityId: number | null;
   onOrgChange: (orgId: number | null) => void;
   onClientChange: (clientId: number | null) => void;
   onProjectChange: (projectId: number | null) => void;
+  onStatusChange: (status: MembershipStatus | null) => void;
+  onCapabilityChange: (capabilityId: number | null) => void;
 }
 
 /**
- * spec003 §3 step 5 (org/client dropdowns), moved behind a popup per
- * spec006 §3 — same filtering behavior, triggered by a filter-icon button
- * instead of being always visible. Labels renamed "Organization"/"Client" →
- * "Filter by organization"/"Filter by client". spec007 §1 adds a third
- * "Filter by project" dropdown, cascading the same way client already
- * cascades off org: picking an org narrows both client and project options;
- * picking a client further narrows project options. spec008 §5: the
- * cascading-options logic itself now lives in `lib/scopeFilterOptions.ts`,
- * shared with `OrganizationMembersFilter.tsx`.
+ * spec008 §5: `/organization-members`'s filter popup — the same org/client/
+ * project cascading dropdowns as `AccessScopeFilter.tsx` (via the shared
+ * `useScopeFilterOptions` hook, spec008 §5's extraction), plus Status and
+ * Capability dropdowns unique to this page.
  */
-export function AccessScopeFilter({
+export function OrganizationMembersFilter({
   selectedOrgId,
   selectedClientId,
   selectedProjectId,
+  selectedStatus,
+  selectedCapabilityId,
   onOrgChange,
   onClientChange,
   onProjectChange,
-}: AccessScopeFilterProps) {
+  onStatusChange,
+  onCapabilityChange,
+}: OrganizationMembersFilterProps) {
   const [isOpen, setIsOpen] = useState(false);
   const { orgOptions, clientOptions, projectOptions } = useScopeFilterOptions(selectedOrgId, selectedClientId);
+  const capabilities = useAppStore((state) => state.capabilities);
+
+  const capabilityOptions = useMemo(
+    () =>
+      [...capabilities].sort(
+        (a, b) => a.resourceName.localeCompare(b.resourceName) || a.actionName.localeCompare(b.actionName),
+      ),
+    [capabilities],
+  );
 
   const activeFilterCount =
     (selectedOrgId !== null ? 1 : 0) +
     (selectedClientId !== null ? 1 : 0) +
-    (selectedProjectId !== null ? 1 : 0);
+    (selectedProjectId !== null ? 1 : 0) +
+    (selectedStatus !== null ? 1 : 0) +
+    (selectedCapabilityId !== null ? 1 : 0);
 
   return (
     <div className="relative inline-block">
@@ -64,7 +80,7 @@ export function AccessScopeFilter({
             onClick={() => setIsOpen(false)}
             className="fixed inset-0 z-40 cursor-default"
           />
-          <div className="absolute left-0 top-full z-50 mt-2 flex w-72 flex-col gap-4 rounded border border-slate-200 bg-white p-4 shadow-lg">
+          <div className="absolute left-0 top-full z-50 mt-2 flex w-80 flex-col gap-4 rounded border border-slate-200 bg-white p-4 shadow-lg">
             <label className="flex flex-col text-sm font-medium text-slate-600">
               Filter by organization
               <select
@@ -120,6 +136,41 @@ export function AccessScopeFilter({
                 {projectOptions.map((option) => (
                   <option key={option.id} value={option.id}>
                     {option.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex flex-col text-sm font-medium text-slate-600">
+              Filter by status
+              <select
+                className="mt-1 rounded border border-slate-300 bg-white px-3 py-2 text-slate-800"
+                value={selectedStatus ?? ''}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  onStatusChange(value === '' ? null : (value as MembershipStatus));
+                }}
+              >
+                <option value="">All statuses</option>
+                <option value="active">Active</option>
+                <option value="pending">Pending</option>
+              </select>
+            </label>
+
+            <label className="flex flex-col text-sm font-medium text-slate-600">
+              Filter by capability
+              <select
+                className="mt-1 rounded border border-slate-300 bg-white px-3 py-2 text-slate-800"
+                value={selectedCapabilityId ?? ''}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  onCapabilityChange(value === '' ? null : Number(value));
+                }}
+              >
+                <option value="">All capabilities</option>
+                {capabilityOptions.map((capability) => (
+                  <option key={capability.id} value={capability.id}>
+                    {capability.resourceName} → {capability.actionName}
                   </option>
                 ))}
               </select>

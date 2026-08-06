@@ -170,6 +170,64 @@ export interface GrantCapabilityUpdateEntry {
   denied: boolean;
 }
 
+// PATCH /grant-capabilities?grantId=... request body (spec006 §4, extended
+// to also persist roleId — see grant-capabilities-service.ts).
+export interface GrantCapabilitiesPatchRequestBody {
+  capabilities: GrantCapabilityUpdateEntry[];
+  roleId?: number | null;
+}
+
+// POST /user request body (spec007 §5 Step A / §6).
+export interface CreateUserRequestBody {
+  email: string;
+  displayName: string;
+  scope: 'Org' | 'Client';
+  orgId: number | null;
+  clientId: number | null;
+  roleId: number | null;
+  invitedByUserId: number | null;
+}
+
+// POST /grant-capabilities request body (spec007 §5 Step B) — creates a new
+// access_grants row plus its grant_capabilities rows in one call.
+export interface CreateGrantRequestBody {
+  orgId: number | null;
+  clientId: number | null;
+  projectId: number | null;
+  email: string;
+  roleId: number | null;
+  grantCapabilities: GrantCapabilityUpdateEntry[];
+}
+
+// GET /organization-members?orgIds=... response row (spec008). One row per
+// (orgId, email) with at least one org_membership/client_membership row
+// under that org; reach/capabilities derived from access_grants/
+// grant_capabilities, not membership rows (spec008 decision 1).
+export interface OrganizationMemberReachEntry {
+  kind: 'client' | 'project';
+  id: number;
+  name: string;
+}
+
+export interface OrganizationMemberCapabilityEntry {
+  capabilityId: number;
+  resourceId: number;
+  resourceName: string;
+  actionId: number;
+  actionName: string;
+}
+
+export interface OrganizationMemberSummary {
+  orgId: number;
+  email: string;
+  displayName: string | null;
+  status: MembershipStatus;
+  orgWideAccess: boolean;
+  reach: OrganizationMemberReachEntry[];
+  capabilities: OrganizationMemberCapabilityEntry[];
+  grantIds: number[];
+}
+
 export interface OrganizationOverview {
   organization: Organization;
   clients: Client[];
