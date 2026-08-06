@@ -85,9 +85,89 @@ export interface Capability {
 export interface CapabilityPreset {
   id: number;
   orgId: number | null;
+  roleId: number;
   label: string;
   description?: string;
-  capabilities: Capability[];
+  capabilityId: number;
+}
+
+// Scope (orgId/clientId/projectId) is mutually exclusive: exactly one is
+// non-null, the other two are null (spec003 §1). Capability information has
+// moved entirely to GrantCapability (spec004 §2) — this row is scope +
+// grantee + role only.
+export interface AccessGrant {
+  id: number;
+  orgId: number | null;
+  clientId: number | null;
+  projectId: number | null;
+  userId: number | null;
+  integrationId?: number | null;
+  email: string | null;
+  roleId: number | null;
+}
+
+// grant_capabilities table (spec004 §2). `added`/`denied` mutually
+// exclusive; `preset`/`added` mutually exclusive; `preset`+`denied` may
+// coexist (a preset capability the grant explicitly revokes).
+export interface GrantCapability {
+  id: number;
+  grantId: number;
+  capabilityId: number;
+  preset: boolean;
+  added: boolean;
+  denied: boolean;
+}
+
+// GET /users-access-grants response row (spec003 §7, updated spec004 §7) —
+// roleId/roleName resolve directly from AccessGrant.roleId now.
+export interface AccessGrantSummary {
+  grantId: number;
+  orgId: number | null;
+  clientId: number | null;
+  projectId: number | null;
+  userId: number | null;
+  email: string;
+  displayName: string | null;
+  roleId: number | null;
+  roleName: string | null;
+}
+
+// GET /capabilities response row (spec003 §10.1).
+export interface CapabilityDetail {
+  id: number;
+  resourceId: number;
+  resourceName: string;
+  actionId: number;
+  actionName: string;
+}
+
+// GET /capabilities-preset response row (spec004 §3) — the full
+// role→capability catalog, independent of any grant.
+export interface RoleCapabilityPreset {
+  roleId: number;
+  roleName: string;
+  capabilityId: number;
+  label: string;
+  description?: string;
+}
+
+// GET /grant-capabilities?grantId=... response row (spec004 §5) — supersedes
+// spec003 §10.3's GrantCapabilityEntry/three-endpoint split.
+export interface GrantCapabilityDetail {
+  capabilityId: number;
+  resourceId: number;
+  actionId: number;
+  preset: boolean;
+  added: boolean;
+  denied: boolean;
+}
+
+// PATCH /grant-capabilities?grantId=... request body entry (spec006 §4).
+export interface GrantCapabilityUpdateEntry {
+  capabilityId: number;
+  preset: boolean;
+  added: boolean;
+  denied: boolean;
 }
 
 export interface OrganizationOverview {
