@@ -2,16 +2,55 @@
 
 ## Quick Start
 
-```powershell
+```bash
 git clone <repo_url>
+cp .env.example .env
 npm install
 npm run dev
 ```
 
+**IMPORTANT**:
+* backend must be up an running for this frontend to work
+* `VITE_API_URL`'s port must match the `PORT` exposed by backend; they already match in the .env.example files, so you do not have to do anything
 
-## With more time
 
-* implement a login with an check whether the user is an "ops lead"/"super amin"; if he is, he can see and work in /access-editor and /organization-members; if he is not, he will not be able to see these pages
+## Capablity Model
+
+A **Principal** is a user or an integration, i.e the subject that receive the grant.
+
+A **Grant** is an entity associated to a user or an integration; it has a scope, it can have a role (which is a preset of capabilities), and has a certain number of capabilities. 
+
+A **Capability** is a couple `resource:action`. in the backend service, it is a many-to-many table (`capabilities`) that links `resources` table and `actions` table. In this way, the capabilities are completely parametric, any set of resource and action cna be easily composed.
+
+Principals can have multiple grants i.e. a user can have a grant on an organization, then have another grant on a particular project.
+
+During the creation of a grant, the user can select a role, and a preset of capabilities is selected. The user can confirm this preset or allow/deny capabilities. Allow/deny works like diff in git: allowed capabilites are added to the prset, denied capabilities are capaiblities in the preset that the usr explicitly removes.
+
+
+## URL Structure
+
+* `/`: basic landing page with 2 buttons that redirect to surfaces 1 and 2 from the requirements document.
+* `/access-editor`: route that allows to create/edit/delete grants
+* `/organization-members`: route that allows to see all the users that belong to organizations and clients the logged user can see
+
+## Where to Add New Resource
+
+Go to the backend folder (users-access-backend); in /data/resources.json, add a new record
+
+```json
+{
+    "id": 8,
+    "name": "new resource name"
+}
+```
+
+### 
+
+
+## With More Time
+
+* implement the "fail on demand" of the API calls
+* implement a login with a check whether the user is an "ops lead" or "super amin"; if he is, he can see and work in `/access-editor` and `/organization-members`; if he is not, he will not be able to see these pages
 * improve data lineage: insert changelog on grants to see their history (who created them and when, who updated them and when, ...)
 * implement a permission gate; every action the user does (video-view, image:export, ...), the application asks to the backend if the user has that capability granted on that scope
 * improve scopes management; in this moment the user can assing a scope choosing between an org, a client or a project; that's it; but if the assigned scope is an organization with multiple clients and projects, the application should ask the user if he wants the user to see all the clients and projects under tht organization, or if he wants to select a subset;
