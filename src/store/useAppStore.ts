@@ -3,6 +3,7 @@ import type {
   AccessGrantSummary,
   CapabilityDetail,
   ClientMembership,
+  IntegrationAccessGrantSummary,
   OrganizationMemberSummary,
   OrganizationOverview,
   OrgMembership,
@@ -24,6 +25,8 @@ interface AppState {
   clientMembershipsStatus: FetchStatus;
   accessGrantSummaries: AccessGrantSummary[];
   accessGrantSummariesStatus: FetchStatus;
+  integrationAccessGrantSummaries: IntegrationAccessGrantSummary[];
+  integrationAccessGrantSummariesStatus: FetchStatus;
   projects: Project[];
   projectsStatus: FetchStatus;
   roles: Role[];
@@ -46,6 +49,19 @@ interface AppState {
   addAccessGrantSummary: (accessGrantSummary: AccessGrantSummary) => void;
   removeAccessGrantSummary: (grantId: number) => void;
   updateAccessGrantSummaryRole: (grantId: number, roleId: number | null, roleName: string | null) => void;
+  setIntegrationAccessGrantSummaries: (
+    integrationAccessGrantSummaries: IntegrationAccessGrantSummary[],
+  ) => void;
+  setIntegrationAccessGrantSummariesStatus: (status: FetchStatus) => void;
+  addIntegrationAccessGrantSummary: (
+    integrationAccessGrantSummary: IntegrationAccessGrantSummary,
+  ) => void;
+  removeIntegrationAccessGrantSummary: (grantId: number) => void;
+  updateIntegrationAccessGrantSummaryRole: (
+    grantId: number,
+    roleId: number | null,
+    roleName: string | null,
+  ) => void;
   setProjects: (projects: Project[]) => void;
   setProjectsStatus: (status: FetchStatus) => void;
   setRoles: (roles: Role[]) => void;
@@ -68,6 +84,8 @@ export const useAppStore = create<AppState>((set) => ({
   clientMembershipsStatus: 'idle',
   accessGrantSummaries: [],
   accessGrantSummariesStatus: 'idle',
+  integrationAccessGrantSummaries: [],
+  integrationAccessGrantSummariesStatus: 'idle',
   projects: [],
   projectsStatus: 'idle',
   roles: [],
@@ -105,6 +123,34 @@ export const useAppStore = create<AppState>((set) => ({
   updateAccessGrantSummaryRole: (grantId, roleId, roleName) =>
     set((state) => ({
       accessGrantSummaries: state.accessGrantSummaries.map((summary) =>
+        summary.grantId === grantId ? { ...summary, roleId, roleName } : summary,
+      ),
+    })),
+  setIntegrationAccessGrantSummaries: (integrationAccessGrantSummaries) =>
+    set({ integrationAccessGrantSummaries }),
+  setIntegrationAccessGrantSummariesStatus: (integrationAccessGrantSummariesStatus) =>
+    set({ integrationAccessGrantSummariesStatus }),
+  // spec010 §5: appends the just-created integration grant returned by
+  // POST /grant-capabilities, mirroring addAccessGrantSummary above.
+  addIntegrationAccessGrantSummary: (integrationAccessGrantSummary) =>
+    set((state) => ({
+      integrationAccessGrantSummaries: [
+        ...state.integrationAccessGrantSummaries,
+        integrationAccessGrantSummary,
+      ],
+    })),
+  // spec010 §11: mirrors removeAccessGrantSummary above, for the integrations table's delete button.
+  removeIntegrationAccessGrantSummary: (grantId) =>
+    set((state) => ({
+      integrationAccessGrantSummaries: state.integrationAccessGrantSummaries.filter(
+        (summary) => summary.grantId !== grantId,
+      ),
+    })),
+  // spec010 §10: mirrors updateAccessGrantSummaryRole above, for GrantEditorDialog's
+  // Save when the edited grant is integration-targeted.
+  updateIntegrationAccessGrantSummaryRole: (grantId, roleId, roleName) =>
+    set((state) => ({
+      integrationAccessGrantSummaries: state.integrationAccessGrantSummaries.map((summary) =>
         summary.grantId === grantId ? { ...summary, roleId, roleName } : summary,
       ),
     })),

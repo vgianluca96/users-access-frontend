@@ -8,6 +8,7 @@ import type {
   AccessGrantSummary,
   CapabilityDetail,
   ClientMembership,
+  IntegrationAccessGrantSummary,
   OrganizationMemberSummary,
   OrganizationOverview,
   OrgMembership,
@@ -37,6 +38,9 @@ export function AppDataLoader({ children }: AppDataLoaderProps) {
   const orgMembershipsStatus = useAppStore((state) => state.orgMembershipsStatus);
   const clientMembershipsStatus = useAppStore((state) => state.clientMembershipsStatus);
   const accessGrantSummariesStatus = useAppStore((state) => state.accessGrantSummariesStatus);
+  const integrationAccessGrantSummariesStatus = useAppStore(
+    (state) => state.integrationAccessGrantSummariesStatus,
+  );
   const projectsStatus = useAppStore((state) => state.projectsStatus);
   const rolesStatus = useAppStore((state) => state.rolesStatus);
   const capabilitiesStatus = useAppStore((state) => state.capabilitiesStatus);
@@ -53,6 +57,12 @@ export function AppDataLoader({ children }: AppDataLoaderProps) {
   const setAccessGrantSummaries = useAppStore((state) => state.setAccessGrantSummaries);
   const setAccessGrantSummariesStatus = useAppStore(
     (state) => state.setAccessGrantSummariesStatus,
+  );
+  const setIntegrationAccessGrantSummaries = useAppStore(
+    (state) => state.setIntegrationAccessGrantSummaries,
+  );
+  const setIntegrationAccessGrantSummariesStatus = useAppStore(
+    (state) => state.setIntegrationAccessGrantSummariesStatus,
   );
   const setProjects = useAppStore((state) => state.setProjects);
   const setProjectsStatus = useAppStore((state) => state.setProjectsStatus);
@@ -157,6 +167,21 @@ export function AppDataLoader({ children }: AppDataLoaderProps) {
           setAccessGrantSummariesStatus('error');
         });
 
+      // spec010 §6: the integration-targeted mirror of the fetch above, same
+      // org-id dependency.
+      setIntegrationAccessGrantSummariesStatus('loading');
+      apiClient
+        .get<IntegrationAccessGrantSummary[]>('/integrations-access-grants', {
+          params: { orgIds: orgIds.join(',') },
+        })
+        .then((response) => {
+          setIntegrationAccessGrantSummaries(response.data);
+          setIntegrationAccessGrantSummariesStatus('success');
+        })
+        .catch(() => {
+          setIntegrationAccessGrantSummariesStatus('error');
+        });
+
       // spec008 §4: same org-id dependency as access grant summaries above.
       setOrganizationMembersStatus('loading');
       apiClient
@@ -196,6 +221,8 @@ export function AppDataLoader({ children }: AppDataLoaderProps) {
   }, [
     setAccessGrantSummaries,
     setAccessGrantSummariesStatus,
+    setIntegrationAccessGrantSummaries,
+    setIntegrationAccessGrantSummariesStatus,
     setCapabilities,
     setCapabilitiesStatus,
     setClientMemberships,
@@ -220,6 +247,7 @@ export function AppDataLoader({ children }: AppDataLoaderProps) {
     orgMembershipsStatus,
     clientMembershipsStatus,
     accessGrantSummariesStatus,
+    integrationAccessGrantSummariesStatus,
     projectsStatus,
     rolesStatus,
     capabilitiesStatus,

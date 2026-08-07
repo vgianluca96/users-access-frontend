@@ -6,6 +6,7 @@ import { AccessGrantsTable } from '../components/AccessGrantsTable';
 import { AccessScopeFilter } from '../components/AccessScopeFilter';
 import { AddGrantDialog } from '../components/AddGrantDialog';
 import { GrantEditorDialog } from '../components/GrantEditorDialog';
+import { IntegrationAccessGrantsTable } from '../components/IntegrationAccessGrantsTable';
 
 export function AccessEditorPage() {
   const navigate = useNavigate();
@@ -55,6 +56,20 @@ export function AccessEditorPage() {
         </div>
 
         <AccessGrantsTable
+          selectedOrgId={selectedOrgId}
+          selectedClientId={selectedClientId}
+          selectedProjectId={selectedProjectId}
+          onEditGrant={setEditingGrantId}
+        />
+
+        <div>
+          <h2 className="text-lg font-semibold text-slate-800">Integration access grants</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Access grants held by integrations rather than by individual users.
+          </p>
+        </div>
+
+        <IntegrationAccessGrantsTable
           selectedOrgId={selectedOrgId}
           selectedClientId={selectedClientId}
           selectedProjectId={selectedProjectId}

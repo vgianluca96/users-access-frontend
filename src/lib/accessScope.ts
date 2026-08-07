@@ -1,4 +1,19 @@
-import type { AccessGrantSummary, Client, Organization, OrganizationOverview, Project } from '../types';
+import type {
+  AccessGrantSummary,
+  Client,
+  IntegrationAccessGrantSummary,
+  Organization,
+  OrganizationOverview,
+  Project,
+} from '../types';
+
+// spec010 §10: distinguishes the two grant-summary shapes GrantEditorDialog
+// can be opened against — `email` only exists on the user-targeted shape.
+export function isIntegrationAccessGrantSummary(
+  grant: AccessGrantSummary | IntegrationAccessGrantSummary,
+): grant is IntegrationAccessGrantSummary {
+  return !('email' in grant);
+}
 
 /**
  * Org/client names aren't available on OrgMembership/ClientMembership rows

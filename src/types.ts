@@ -95,13 +95,16 @@ export interface CapabilityPreset {
 // non-null, the other two are null (spec003 §1). Capability information has
 // moved entirely to GrantCapability (spec004 §2) — this row is scope +
 // grantee + role only.
+//
+// spec010 §2: exactly one of `email` / `integrationId` is non-null — a grant
+// targets a user or an integration, never both, never neither.
 export interface AccessGrant {
   id: number;
   orgId: number | null;
   clientId: number | null;
   projectId: number | null;
   userId: number | null;
-  integrationId?: number | null;
+  integrationId: number | null;
   email: string | null;
   roleId: number | null;
 }
@@ -128,6 +131,21 @@ export interface AccessGrantSummary {
   userId: number | null;
   email: string;
   displayName: string | null;
+  roleId: number | null;
+  roleName: string | null;
+}
+
+// GET /integrations-access-grants response row (spec010 §4) — the
+// integration-targeted mirror of AccessGrantSummary: integrationId/
+// integrationName/provider stand in for userId/email/displayName.
+export interface IntegrationAccessGrantSummary {
+  grantId: number;
+  orgId: number | null;
+  clientId: number | null;
+  projectId: number | null;
+  integrationId: number;
+  integrationName: string;
+  provider: string;
   roleId: number | null;
   roleName: string | null;
 }
@@ -188,13 +206,16 @@ export interface CreateUserRequestBody {
   invitedByUserId: number | null;
 }
 
-// POST /grant-capabilities request body (spec007 §5 Step B) — creates a new
-// access_grants row plus its grant_capabilities rows in one call.
+// POST /grant-capabilities request body (spec007 §5 Step B, extended
+// spec010 §5 for integration-targeted grants) — creates a new access_grants
+// row plus its grant_capabilities rows in one call. Exactly one of
+// `email`/`integrationId` must be non-null (spec010 §2's invariant).
 export interface CreateGrantRequestBody {
   orgId: number | null;
   clientId: number | null;
   projectId: number | null;
-  email: string;
+  email: string | null;
+  integrationId: number | null;
   roleId: number | null;
   grantCapabilities: GrantCapabilityUpdateEntry[];
 }

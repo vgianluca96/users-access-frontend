@@ -9,9 +9,10 @@ import type {
   AccessGrantSummary,
   CreateGrantRequestBody,
   CreateUserRequestBody,
+  IntegrationAccessGrantSummary,
   User,
 } from '../types';
-import { buildClientsById, buildOrganizationsById, type ScopeKind } from '../lib/accessScope';
+import { buildClientsById, buildOrganizationsById, isIntegrationAccessGrantSummary, type ScopeKind } from '../lib/accessScope';
 import {
   applyCycleToOverride,
   buildRoleBundleBaseline,
@@ -25,23 +26,31 @@ import {
 import { CapabilityMatrix } from './CapabilityMatrix';
 
 type UserMode = 'new' | 'existing';
+type TargetKind = 'user' | 'integration';
 
 interface AddGrantDialogProps {
   onClose: () => void;
 }
 
 /**
- * spec007 §2-5, reworked by spec009 §3: the "Add new grant" dialog. Step 1
- * first asks whether the grant is for a brand-new user (email + display name,
- * the original spec007 flow) or an existing one (a dropdown of users linked
- * to the orgs the logged-in user can see, fetched from `GET /users?orgIds=`)
- * — picking "existing user" lets the same person receive multiple grants
- * without re-inviting them. Step 2 reuses the same scope/role-preset/
- * capability-matrix UI as `GrantEditorDialog.tsx` (via `lib/capabilityMatrix.ts`
- * + `CapabilityMatrix.tsx`), starting from a fully neutral/empty state
- * instead of prefilling from an existing grant. Save runs up to two requests
- * in sequence — `POST /users` (skipped for an existing user) then
- * `POST /grant-capabilities` (spec007 §5, spec009 §1 renames `/user`→`/users`).
+ * spec007 §2-5, reworked by spec009 §3, extended by spec010 §8-9 into a
+ * 3-step wizard. Step 1 (new, spec010 §8) asks whether the grant targets a
+ * user or an integration — nothing preselected, Next disabled until chosen.
+ * Step 2 branches: the user path is the original spec007/spec009 step 1
+ * (new-vs-existing-user picker); the integration path (new, spec010 §9) is a
+ * single "existing integration" dropdown, sourced from
+ * `OrganizationOverview.integrations` already in the store — no creation of
+ * a new integration, unlike the user path's "new user" option. Step 3 reuses
+ * the same scope/role-preset/capability-matrix UI as `GrantEditorDialog.tsx`
+ * (via `lib/capabilityMatrix.ts` + `CapabilityMatrix.tsx`) for both target
+ * kinds, starting from a fully neutral/empty state.
+ *
+ * Save runs up to two requests in sequence for the user path — `POST /users`
+ * (skipped for an existing user) then `POST /grant-capabilities` (spec007
+ * §5, spec009 §1 renames `/user`→`/users`) — and exactly one for the
+ * integration path, straight to `POST /grant-capabilities` with
+ * `integrationId` instead of `email` (spec010 §5, confirmed: the existing
+ * endpoint was extended rather than adding a dedicated one).
  */
 export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
   const orgMemberships = useAppStore((state) => state.orgMemberships);
@@ -52,20 +61,30 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
   const capabilities = useAppStore((state) => state.capabilities);
   const rolePresetCapabilities = useAppStore((state) => state.rolePresetCapabilities);
   const addAccessGrantSummary = useAppStore((state) => state.addAccessGrantSummary);
+  const addIntegrationAccessGrantSummary = useAppStore(
+    (state) => state.addIntegrationAccessGrantSummary,
+  );
 
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
 
-  // Step 1 — new vs. existing user.
+  // Step 1 — grant target kind. Starts unselected (spec010 §8): "if the user
+  // does not choose, next button is disabled" requires a real empty state.
+  const [targetKind, setTargetKind] = useState<TargetKind | null>(null);
+
+  // Step 2 (user path) — new vs. existing user.
   const [userMode, setUserMode] = useState<UserMode>('new');
   const [visibleUsers, setVisibleUsers] = useState<User[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [selectedExistingUserId, setSelectedExistingUserId] = useState<number | null>(null);
 
-  // Step 1 — "new user" fields.
+  // Step 2 (user path) — "new user" fields.
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
 
-  // Step 2 — same shape as GrantEditorDialog, all starting neutral/unselected
+  // Step 2 (integration path) — existing integration picker (spec010 §9).
+  const [selectedIntegrationId, setSelectedIntegrationId] = useState<number | null>(null);
+
+  // Step 3 — same shape as GrantEditorDialog, all starting neutral/unselected
   // (spec007 §4) instead of prefilled from a fetched grant.
   const [scopeKind, setScopeKind] = useState<ScopeKind>('org');
   const [scopeEntityId, setScopeEntityId] = useState<number | null>(null);
@@ -77,9 +96,10 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
   const [roleSwitchHighlight, setRoleSwitchHighlight] = useState<Set<number>>(new Set());
 
   // spec007 §5, resolved retry behavior: once Step A (POST /users) succeeds
-  // — or an existing user was picked in step 1, skipping Step A entirely
+  // — or an existing user was picked in step 2, skipping Step A entirely
   // (spec009 §3) — its result is remembered so a retry after a Step B
-  // failure only re-sends Step B, rather than re-running Step A.
+  // failure only re-sends Step B, rather than re-running Step A. Never used
+  // on the integration path, which has no Step A at all (spec010 §9).
   const [createdUser, setCreatedUser] = useState<{ id: number; email: string } | null>(null);
 
   const [isSaving, setIsSaving] = useState(false);
@@ -93,13 +113,14 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
     [orgMemberships],
   );
 
-  // spec009 §2-3: fetches the "existing user" picker's options once, on open
-  // — also doubles as the best-effort duplicate-email check for "new user"
-  // (§3's resolved scope: checked against this visible-org list only, not
-  // every user in the system; POST /users' 409 remains the authoritative
-  // fallback for anything outside it).
+  // spec009 §2-3: fetches the "existing user" picker's options once the user
+  // path is selected — also doubles as the best-effort duplicate-email check
+  // for "new user" (§3's resolved scope: checked against this visible-org
+  // list only, not every user in the system; POST /users' 409 remains the
+  // authoritative fallback for anything outside it). Skipped entirely on the
+  // integration path, which has no use for it.
   useEffect(() => {
-    if (visibleOrgIds.length === 0) {
+    if (targetKind !== 'user' || visibleOrgIds.length === 0) {
       return;
     }
 
@@ -109,7 +130,27 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
       .then((response) => setVisibleUsers(response.data))
       .catch(() => setVisibleUsers([]))
       .finally(() => setIsLoadingUsers(false));
-  }, [visibleOrgIds]);
+  }, [targetKind, visibleOrgIds]);
+
+  // spec010 §9: the "existing integration" picker's options — every
+  // integration under an org the logged-in user belongs to, deduped by id.
+  // No new fetch: OrganizationOverview.integrations is already in the store
+  // (AppDataLoader's GET /organizations, spec002 §5).
+  const integrationOptions = useMemo(() => {
+    const byId = new Map<number, { id: number; name: string; provider: string }>();
+
+    for (const overview of organizations) {
+      for (const integration of overview.integrations) {
+        byId.set(integration.id, {
+          id: integration.id,
+          name: integration.name,
+          provider: integration.provider,
+        });
+      }
+    }
+
+    return Array.from(byId.values());
+  }, [organizations]);
 
   const orgOptions = Array.from(new Set(orgMemberships.map((membership) => membership.orgId))).map((id) => ({
     id,
@@ -125,10 +166,14 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
 
   const isEmailValid = isValidEmail(email.trim());
   const isEmailTaken = visibleUsers.some((user) => user.email === email.trim());
-  const canGoToStep2 =
-    userMode === 'new'
-      ? isEmailValid && !isEmailTaken && displayName.trim().length > 0
-      : selectedExistingUserId !== null;
+
+  const canGoToStep2 = targetKind !== null;
+  const canGoToStep3 =
+    targetKind === 'user'
+      ? userMode === 'new'
+        ? isEmailValid && !isEmailTaken && displayName.trim().length > 0
+        : selectedExistingUserId !== null
+      : selectedIntegrationId !== null;
 
   const finalCapabilities = computeFinalCapabilities(baseline, pendingOverride);
   const canSave = scopeEntityId !== null && finalCapabilities.length > 0;
@@ -197,7 +242,7 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
     try {
       let user = createdUser;
 
-      if (!user) {
+      if (targetKind === 'user' && !user) {
         const membershipTarget = resolveUserMembershipTarget();
         const body: CreateUserRequestBody = {
           email: email.trim(),
@@ -217,16 +262,20 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
         orgId: scopeKind === 'org' ? scopeEntityId : null,
         clientId: scopeKind === 'client' ? scopeEntityId : null,
         projectId: scopeKind === 'project' ? scopeEntityId : null,
-        email: user.email,
+        email: targetKind === 'user' ? user?.email ?? null : null,
+        integrationId: targetKind === 'integration' ? selectedIntegrationId : null,
         roleId: selectedRoleId,
         grantCapabilities: finalCapabilities,
       };
-      const grantResponse = await apiClient.post<{ grant: AccessGrantSummary }>(
-        '/grant-capabilities',
-        grantBody,
-      );
+      const grantResponse = await apiClient.post<{
+        grant: AccessGrantSummary | IntegrationAccessGrantSummary;
+      }>('/grant-capabilities', grantBody);
 
-      addAccessGrantSummary(grantResponse.data.grant);
+      if (isIntegrationAccessGrantSummary(grantResponse.data.grant)) {
+        addIntegrationAccessGrantSummary(grantResponse.data.grant);
+      } else {
+        addAccessGrantSummary(grantResponse.data.grant);
+      }
       onClose();
     } catch {
       setSaveError('Failed to save changes. Please try again.');
@@ -235,24 +284,36 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
     }
   }
 
-  // spec009 §3: picking "existing user" means there's no `POST /users` call
-  // to make — the user already exists, so `createdUser` is set directly from
-  // the dropdown selection, which makes `handleSave`'s existing
-  // `if (!user)` short-circuit skip Step A entirely.
   function handleNext() {
-    if (!canGoToStep2) {
+    if (step === 1) {
+      if (!canGoToStep2) {
+        return;
+      }
+
+      setStep(2);
       return;
     }
 
-    if (userMode === 'existing') {
-      const selectedUser = visibleUsers.find((user) => user.id === selectedExistingUserId);
-
-      if (selectedUser && selectedUser.id !== null) {
-        setCreatedUser({ id: selectedUser.id, email: selectedUser.email });
+    if (step === 2) {
+      if (!canGoToStep3) {
+        return;
       }
-    }
 
-    setStep(2);
+      // spec009 §3: picking "existing user" means there's no `POST /users`
+      // call to make — the user already exists, so `createdUser` is set
+      // directly from the dropdown selection, which makes `handleSave`'s
+      // `if (targetKind === 'user' && !user)` short-circuit skip Step A
+      // entirely. The integration path never runs Step A at all.
+      if (targetKind === 'user' && userMode === 'existing') {
+        const selectedUser = visibleUsers.find((user) => user.id === selectedExistingUserId);
+
+        if (selectedUser && selectedUser.id !== null) {
+          setCreatedUser({ id: selectedUser.id, email: selectedUser.email });
+        }
+      }
+
+      setStep(3);
+    }
   }
 
   return (
@@ -260,7 +321,7 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
       <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-slate-800">
-            Add new grant — Step {step} of 2
+            Add new grant — Step {step} of 3
           </h2>
           <button
             type="button"
@@ -272,7 +333,49 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
           </button>
         </div>
 
-        {step === 1 ? (
+        {step === 1 && (
+          <div className="flex flex-col gap-4">
+            <label className="flex flex-col text-sm font-medium text-slate-600">
+              Create this grant for
+              <select
+                value={targetKind ?? ''}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setTargetKind(value === '' ? null : (value as TargetKind));
+                }}
+                className="mt-1 rounded border border-slate-300 px-3 py-2 text-slate-800"
+              >
+                <option value="">Select…</option>
+                <option value="user">A user</option>
+                <option value="integration">An integration</option>
+              </select>
+            </label>
+
+            <div className="mt-2 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded border border-slate-300 px-4 py-2 text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={!canGoToStep2}
+                className={`rounded px-4 py-2 ${
+                  canGoToStep2
+                    ? 'bg-slate-800 text-white hover:bg-slate-700'
+                    : 'cursor-not-allowed bg-slate-300 text-slate-500'
+                }`}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 2 && targetKind === 'user' && (
           <div className="flex flex-col gap-4">
             <label className="flex flex-col text-sm font-medium text-slate-600">
               This grant is for
@@ -354,9 +457,9 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
               <button
                 type="button"
                 onClick={handleNext}
-                disabled={!canGoToStep2}
+                disabled={!canGoToStep3}
                 className={`rounded px-4 py-2 ${
-                  canGoToStep2
+                  canGoToStep3
                     ? 'bg-slate-800 text-white hover:bg-slate-700'
                     : 'cursor-not-allowed bg-slate-300 text-slate-500'
                 }`}
@@ -365,7 +468,53 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
               </button>
             </div>
           </div>
-        ) : (
+        )}
+
+        {step === 2 && targetKind === 'integration' && (
+          <div className="flex flex-col gap-4">
+            <label className="flex flex-col text-sm font-medium text-slate-600">
+              Existing integration
+              <select
+                value={selectedIntegrationId ?? ''}
+                onChange={(event) =>
+                  setSelectedIntegrationId(event.target.value === '' ? null : Number(event.target.value))
+                }
+                className="mt-1 rounded border border-slate-300 px-3 py-2 text-slate-800"
+              >
+                <option value="">Select…</option>
+                {integrationOptions.map((integration) => (
+                  <option key={integration.id} value={integration.id}>
+                    {integration.name} ({integration.provider})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="mt-2 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded border border-slate-300 px-4 py-2 text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={!canGoToStep3}
+                className={`rounded px-4 py-2 ${
+                  canGoToStep3
+                    ? 'bg-slate-800 text-white hover:bg-slate-700'
+                    : 'cursor-not-allowed bg-slate-300 text-slate-500'
+                }`}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
           <div className="flex flex-col gap-6">
             {saveError && (
               <div className="flex items-center justify-between rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">

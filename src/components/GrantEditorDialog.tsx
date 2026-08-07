@@ -4,6 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { apiClient } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
 import type { GrantCapabilitiesPatchRequestBody, GrantCapabilityDetail } from '../types';
+import { isIntegrationAccessGrantSummary } from '../lib/accessScope';
 import { buildClientsById, buildOrganizationsById, type ScopeKind } from '../lib/accessScope';
 import {
   applyCycleToOverride,
@@ -36,6 +37,9 @@ interface GrantEditorDialogProps {
  */
 export function GrantEditorDialog({ grantId, onClose }: GrantEditorDialogProps) {
   const accessGrantSummaries = useAppStore((state) => state.accessGrantSummaries);
+  const integrationAccessGrantSummaries = useAppStore(
+    (state) => state.integrationAccessGrantSummaries,
+  );
   const orgMemberships = useAppStore((state) => state.orgMemberships);
   const clientMemberships = useAppStore((state) => state.clientMemberships);
   const projects = useAppStore((state) => state.projects);
@@ -44,6 +48,9 @@ export function GrantEditorDialog({ grantId, onClose }: GrantEditorDialogProps) 
   const capabilities = useAppStore((state) => state.capabilities);
   const rolePresetCapabilities = useAppStore((state) => state.rolePresetCapabilities);
   const updateAccessGrantSummaryRole = useAppStore((state) => state.updateAccessGrantSummaryRole);
+  const updateIntegrationAccessGrantSummaryRole = useAppStore(
+    (state) => state.updateIntegrationAccessGrantSummaryRole,
+  );
 
   const [isLoading, setIsLoading] = useState(false);
   // spec005: "current status" — drives background only. Replaced wholesale on
@@ -67,10 +74,21 @@ export function GrantEditorDialog({ grantId, onClose }: GrantEditorDialogProps) 
   const [scopeEntityId, setScopeEntityId] = useState<number | null>(null);
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
 
+  // spec010 §10: a grantId may belong to either summary list — the gear
+  // button on both AccessGrantsTable and IntegrationAccessGrantsTable share
+  // this same dialog via AccessEditorPage's one `editingGrantId` state.
   const grant = useMemo(
-    () => accessGrantSummaries.find((candidate) => candidate.grantId === grantId) ?? null,
-    [accessGrantSummaries, grantId],
+    () =>
+      accessGrantSummaries.find((candidate) => candidate.grantId === grantId) ??
+      integrationAccessGrantSummaries.find((candidate) => candidate.grantId === grantId) ??
+      null,
+    [accessGrantSummaries, integrationAccessGrantSummaries, grantId],
   );
+  const grantSubjectLabel = grant
+    ? isIntegrationAccessGrantSummary(grant)
+      ? `${grant.integrationName} (${grant.provider})`
+      : grant.email
+    : '';
 
   const organizationsById = useMemo(() => buildOrganizationsById(organizations), [organizations]);
   const clientsById = useMemo(() => buildClientsById(organizations), [organizations]);
@@ -209,11 +227,15 @@ export function GrantEditorDialog({ grantId, onClose }: GrantEditorDialogProps) 
         setRoleSwitchHighlight(new Set());
         setHasRoleChanged(false);
         setSelectedRoleId(response.data.roleId);
-        updateAccessGrantSummaryRole(
-          grantId,
-          response.data.roleId,
-          roles.find((role) => role.id === response.data.roleId)?.name ?? null,
-        );
+
+        const roleName = roles.find((role) => role.id === response.data.roleId)?.name ?? null;
+        // spec010 §10: dispatch to whichever store slice actually holds this
+        // grantId, so both tables' "Preset Role" columns stay in sync.
+        if (grant && isIntegrationAccessGrantSummary(grant)) {
+          updateIntegrationAccessGrantSummaryRole(grantId, response.data.roleId, roleName);
+        } else {
+          updateAccessGrantSummaryRole(grantId, response.data.roleId, roleName);
+        }
       })
       .catch(() => {
         setSaveError('Failed to save changes. Please try again.');
@@ -237,7 +259,7 @@ export function GrantEditorDialog({ grantId, onClose }: GrantEditorDialogProps) 
       <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-slate-800">
-            Edit access grant{grant ? ` — ${grant.email}` : ''}
+            Edit access grant{grant ? ` — ${grantSubjectLabel}` : ''}
           </h2>
           <button
             type="button"
