@@ -44,6 +44,7 @@ interface AppState {
   setAccessGrantSummaries: (accessGrantSummaries: AccessGrantSummary[]) => void;
   setAccessGrantSummariesStatus: (status: FetchStatus) => void;
   addAccessGrantSummary: (accessGrantSummary: AccessGrantSummary) => void;
+  removeAccessGrantSummary: (grantId: number) => void;
   updateAccessGrantSummaryRole: (grantId: number, roleId: number | null, roleName: string | null) => void;
   setProjects: (projects: Project[]) => void;
   setProjectsStatus: (status: FetchStatus) => void;
@@ -91,6 +92,12 @@ export const useAppStore = create<AppState>((set) => ({
   // POST /grant-capabilities, so it shows up without a full refetch.
   addAccessGrantSummary: (accessGrantSummary) =>
     set((state) => ({ accessGrantSummaries: [...state.accessGrantSummaries, accessGrantSummary] })),
+  // spec009 §4: removes a just-deleted grant from the store so the grants
+  // table updates without a full refetch.
+  removeAccessGrantSummary: (grantId) =>
+    set((state) => ({
+      accessGrantSummaries: state.accessGrantSummaries.filter((summary) => summary.grantId !== grantId),
+    })),
   // Fix: PATCH /grant-capabilities now also persists roleId (previously
   // silently dropped — see grant-capabilities-service.ts) — this keeps the
   // grants table's "Preset Role" column in sync with a successful Save

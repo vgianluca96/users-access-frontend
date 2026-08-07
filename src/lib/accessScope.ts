@@ -84,6 +84,15 @@ export function formatScopeLabel(scope: ResolvedScope): string {
   return `(${SCOPE_KIND_LABEL[scope.kind]}) ${scope.entityName}`;
 }
 
+// spec009 §5/§9: color distinction for org/client/project badges, shared
+// between AccessGrantsTable's "Scope" column and OrganizationMembersTable's
+// "Reach" column so the two read as one system.
+export const SCOPE_KIND_BADGE_CLASSES: Record<ScopeKind, string> = {
+  org: 'bg-indigo-100 text-indigo-800',
+  client: 'bg-purple-100 text-purple-800',
+  project: 'bg-teal-100 text-teal-800',
+};
+
 /**
  * Resolves the org a grant ultimately falls under, even when the grant
  * itself is client/project-scoped (walking up via Client.orgId / Project.orgId)

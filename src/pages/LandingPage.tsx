@@ -1,25 +1,35 @@
-import { useState } from 'react';
-import { faBars } from '@fortawesome/free-solid-svg-icons';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { NavDrawer } from '../components/NavDrawer';
+import { useNavigate } from 'react-router-dom';
 
+/**
+ * spec009 §7: the "Access Editor"/"Organization Members" nav buttons, formerly
+ * only reachable via NavDrawer.tsx's hamburger drawer, now live directly on
+ * the page under the welcome message — the drawer is removed as a redundant
+ * second path to the same two destinations.
+ */
 export function LandingPage() {
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const navigate = useNavigate();
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50">
-      <button
-        type="button"
-        onClick={() => setIsDrawerOpen(true)}
-        aria-label="Open menu"
-        className="fixed left-4 top-4 text-slate-700 hover:text-slate-900"
-      >
-        <FontAwesomeIcon icon={faBars} size="lg" />
-      </button>
-
+    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-slate-50">
       <h1 className="text-2xl font-semibold text-slate-800">Welcome</h1>
 
-      <NavDrawer isOpen={isDrawerOpen} onClose={() => setIsDrawerOpen(false)} />
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <button
+          type="button"
+          onClick={() => navigate('/access-editor')}
+          className="rounded-md bg-slate-800 px-4 py-2 text-white hover:bg-slate-700"
+        >
+          Access Editor
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigate('/organization-members')}
+          className="rounded-md bg-slate-800 px-4 py-2 text-white hover:bg-slate-700"
+        >
+          Organization Members
+        </button>
+      </div>
     </div>
   );
 }

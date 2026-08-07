@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { useNavigate } from 'react-router-dom';
 import { OrganizationMembersFilter } from '../components/OrganizationMembersFilter';
 import { OrganizationMembersTable } from '../components/OrganizationMembersTable';
 import type { MembershipStatus } from '../types';
@@ -11,6 +14,7 @@ import type { MembershipStatus } from '../types';
  * filters + search in a header row, then the table.
  */
 export function OrganizationMembersPage() {
+  const navigate = useNavigate();
   const [searchText, setSearchText] = useState('');
   const [selectedOrgId, setSelectedOrgId] = useState<number | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
@@ -21,6 +25,15 @@ export function OrganizationMembersPage() {
   return (
     <div className="min-h-screen bg-slate-50 px-6 py-8">
       <div className="mx-auto flex max-w-5xl flex-col gap-6">
+        <button
+          type="button"
+          onClick={() => navigate('/')}
+          className="flex items-center gap-2 self-start text-sm font-medium text-slate-600 hover:text-slate-900"
+        >
+          <FontAwesomeIcon icon={faArrowLeft} />
+          Back to home
+        </button>
+
         <div>
           <h1 className="text-2xl font-semibold text-slate-800">Organization Members</h1>
           <p className="mt-1 text-sm text-slate-500">

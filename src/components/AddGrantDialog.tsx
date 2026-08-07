@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { faSpinner, faXmark } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { apiClient } from '../lib/api';
@@ -24,17 +24,24 @@ import {
 } from '../lib/capabilityMatrix';
 import { CapabilityMatrix } from './CapabilityMatrix';
 
+type UserMode = 'new' | 'existing';
+
 interface AddGrantDialogProps {
   onClose: () => void;
 }
 
 /**
- * spec007 §2-5: the "Add new grant" dialog. Step 1 collects a brand-new
- * user's email + display name; step 2 reuses the same scope/role-preset/
+ * spec007 §2-5, reworked by spec009 §3: the "Add new grant" dialog. Step 1
+ * first asks whether the grant is for a brand-new user (email + display name,
+ * the original spec007 flow) or an existing one (a dropdown of users linked
+ * to the orgs the logged-in user can see, fetched from `GET /users?orgIds=`)
+ * — picking "existing user" lets the same person receive multiple grants
+ * without re-inviting them. Step 2 reuses the same scope/role-preset/
  * capability-matrix UI as `GrantEditorDialog.tsx` (via `lib/capabilityMatrix.ts`
  * + `CapabilityMatrix.tsx`), starting from a fully neutral/empty state
- * instead of prefilling from an existing grant. Save runs two requests in
- * sequence — POST /user then POST /grant-capabilities (spec007 §5).
+ * instead of prefilling from an existing grant. Save runs up to two requests
+ * in sequence — `POST /users` (skipped for an existing user) then
+ * `POST /grant-capabilities` (spec007 §5, spec009 §1 renames `/user`→`/users`).
  */
 export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
   const orgMemberships = useAppStore((state) => state.orgMemberships);
@@ -48,7 +55,13 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
 
   const [step, setStep] = useState<1 | 2>(1);
 
-  // Step 1 fields.
+  // Step 1 — new vs. existing user.
+  const [userMode, setUserMode] = useState<UserMode>('new');
+  const [visibleUsers, setVisibleUsers] = useState<User[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [selectedExistingUserId, setSelectedExistingUserId] = useState<number | null>(null);
+
+  // Step 1 — "new user" fields.
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
 
@@ -63,9 +76,10 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
   const [columnCycleState, setColumnCycleState] = useState<Map<number, RowCycleState>>(new Map());
   const [roleSwitchHighlight, setRoleSwitchHighlight] = useState<Set<number>>(new Set());
 
-  // spec007 §5, resolved retry behavior: once Step A (POST /user) succeeds,
-  // its result is remembered so a retry after a Step B failure only re-sends
-  // Step B, rather than re-running Step A against the now-existing email.
+  // spec007 §5, resolved retry behavior: once Step A (POST /users) succeeds
+  // — or an existing user was picked in step 1, skipping Step A entirely
+  // (spec009 §3) — its result is remembered so a retry after a Step B
+  // failure only re-sends Step B, rather than re-running Step A.
   const [createdUser, setCreatedUser] = useState<{ id: number; email: string } | null>(null);
 
   const [isSaving, setIsSaving] = useState(false);
@@ -73,6 +87,29 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
 
   const organizationsById = useMemo(() => buildOrganizationsById(organizations), [organizations]);
   const clientsById = useMemo(() => buildClientsById(organizations), [organizations]);
+
+  const visibleOrgIds = useMemo(
+    () => Array.from(new Set(orgMemberships.map((membership) => membership.orgId))),
+    [orgMemberships],
+  );
+
+  // spec009 §2-3: fetches the "existing user" picker's options once, on open
+  // — also doubles as the best-effort duplicate-email check for "new user"
+  // (§3's resolved scope: checked against this visible-org list only, not
+  // every user in the system; POST /users' 409 remains the authoritative
+  // fallback for anything outside it).
+  useEffect(() => {
+    if (visibleOrgIds.length === 0) {
+      return;
+    }
+
+    setIsLoadingUsers(true);
+    apiClient
+      .get<User[]>('/users', { params: { orgIds: visibleOrgIds.join(',') } })
+      .then((response) => setVisibleUsers(response.data))
+      .catch(() => setVisibleUsers([]))
+      .finally(() => setIsLoadingUsers(false));
+  }, [visibleOrgIds]);
 
   const orgOptions = Array.from(new Set(orgMemberships.map((membership) => membership.orgId))).map((id) => ({
     id,
@@ -87,7 +124,11 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
     scopeKind === 'org' ? orgOptions : scopeKind === 'client' ? clientOptions : projectOptions;
 
   const isEmailValid = isValidEmail(email.trim());
-  const canGoToStep2 = isEmailValid && displayName.trim().length > 0;
+  const isEmailTaken = visibleUsers.some((user) => user.email === email.trim());
+  const canGoToStep2 =
+    userMode === 'new'
+      ? isEmailValid && !isEmailTaken && displayName.trim().length > 0
+      : selectedExistingUserId !== null;
 
   const finalCapabilities = computeFinalCapabilities(baseline, pendingOverride);
   const canSave = scopeEntityId !== null && finalCapabilities.length > 0;
@@ -131,7 +172,7 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
   }
 
   // spec007 §5 Step A — resolves the membership scope/entity to send to
-  // POST /user. Project scope maps to its owning client (resolved decision).
+  // POST /users. Project scope maps to its owning client (resolved decision).
   function resolveUserMembershipTarget(): { scope: 'Org' | 'Client'; orgId: number | null; clientId: number | null } {
     if (scopeKind === 'org') {
       return { scope: 'Org', orgId: scopeEntityId, clientId: null };
@@ -167,7 +208,7 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
           roleId: selectedRoleId,
           invitedByUserId: getLoggedInUser().id,
         };
-        const response = await apiClient.post<{ user: User }>('/user', body);
+        const response = await apiClient.post<{ user: User }>('/users', body);
         user = { id: response.data.user.id as number, email: response.data.user.email };
         setCreatedUser(user);
       }
@@ -194,6 +235,26 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
     }
   }
 
+  // spec009 §3: picking "existing user" means there's no `POST /users` call
+  // to make — the user already exists, so `createdUser` is set directly from
+  // the dropdown selection, which makes `handleSave`'s existing
+  // `if (!user)` short-circuit skip Step A entirely.
+  function handleNext() {
+    if (!canGoToStep2) {
+      return;
+    }
+
+    if (userMode === 'existing') {
+      const selectedUser = visibleUsers.find((user) => user.id === selectedExistingUserId);
+
+      if (selectedUser && selectedUser.id !== null) {
+        setCreatedUser({ id: selectedUser.id, email: selectedUser.email });
+      }
+    }
+
+    setStep(2);
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
       <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
@@ -214,29 +275,73 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
         {step === 1 ? (
           <div className="flex flex-col gap-4">
             <label className="flex flex-col text-sm font-medium text-slate-600">
-              Email
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="name@example.com"
+              This grant is for
+              <select
+                value={userMode}
+                onChange={(event) => {
+                  const nextMode = event.target.value as UserMode;
+                  setUserMode(nextMode);
+                  setSelectedExistingUserId(null);
+                  setEmail('');
+                  setDisplayName('');
+                }}
                 className="mt-1 rounded border border-slate-300 px-3 py-2 text-slate-800"
-              />
-              {email.length > 0 && !isEmailValid && (
-                <span className="mt-1 text-xs text-red-600">Enter a valid email address.</span>
-              )}
+              >
+                <option value="new">A new user</option>
+                <option value="existing">An existing user</option>
+              </select>
             </label>
 
-            <label className="flex flex-col text-sm font-medium text-slate-600">
-              User Name
-              <input
-                type="text"
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-                placeholder="Jane Doe"
-                className="mt-1 rounded border border-slate-300 px-3 py-2 text-slate-800"
-              />
-            </label>
+            {userMode === 'new' ? (
+              <>
+                <label className="flex flex-col text-sm font-medium text-slate-600">
+                  Email
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="name@example.com"
+                    className="mt-1 rounded border border-slate-300 px-3 py-2 text-slate-800"
+                  />
+                  {email.length > 0 && !isEmailValid && (
+                    <span className="mt-1 text-xs text-red-600">Enter a valid email address.</span>
+                  )}
+                  {email.length > 0 && isEmailValid && isEmailTaken && (
+                    <span className="mt-1 text-xs text-red-600">A user with this email already exists.</span>
+                  )}
+                </label>
+
+                <label className="flex flex-col text-sm font-medium text-slate-600">
+                  User Name
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                    placeholder="Jane Doe"
+                    className="mt-1 rounded border border-slate-300 px-3 py-2 text-slate-800"
+                  />
+                </label>
+              </>
+            ) : (
+              <label className="flex flex-col text-sm font-medium text-slate-600">
+                Existing user
+                <select
+                  value={selectedExistingUserId ?? ''}
+                  onChange={(event) =>
+                    setSelectedExistingUserId(event.target.value === '' ? null : Number(event.target.value))
+                  }
+                  disabled={isLoadingUsers}
+                  className="mt-1 rounded border border-slate-300 px-3 py-2 text-slate-800"
+                >
+                  <option value="">{isLoadingUsers ? 'Loading users…' : 'Select…'}</option>
+                  {visibleUsers.map((user) => (
+                    <option key={user.id} value={user.id ?? ''}>
+                      {user.displayName ? `${user.displayName} (${user.email})` : user.email}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <div className="mt-2 flex justify-end gap-3">
               <button
@@ -248,7 +353,7 @@ export function AddGrantDialog({ onClose }: AddGrantDialogProps) {
               </button>
               <button
                 type="button"
-                onClick={() => setStep(2)}
+                onClick={handleNext}
                 disabled={!canGoToStep2}
                 className={`rounded px-4 py-2 ${
                   canGoToStep2
