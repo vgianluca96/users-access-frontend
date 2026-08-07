@@ -26,6 +26,11 @@ Principals can have multiple grants i.e. a user can have a grant on an organizat
 
 During the creation of a grant, the user can select a role, and a preset of capabilities is selected. The user can confirm this preset or allow/deny capabilities. Allow/deny works like diff in git: allowed capabilites are added to the prset, denied capabilities are capaiblities in the preset that the usr explicitly removes.
 
+## People and Integrations
+
+The grants assigned to people and integrations are stored in the same table `access_grants`. the difference is on how the grant is saved: if it is a user's grant, it is save with `email`, if it is a integration's grant, it is saved with `integrationId`.
+
+The flow of creation at frontend level is the same, the only difference is on the input data provided in thedialog box.
 
 ## URL Structure
 
@@ -44,15 +49,14 @@ Go to the backend folder (users-access-backend); in /data/resources.json, add a 
 }
 ```
 
-### 
-
-
 ## With More Time
 
 * implement the "fail on demand" of the API calls
 * implement a login with a check whether the user is an "ops lead" or "super amin"; if he is, he can see and work in `/access-editor` and `/organization-members`; if he is not, he will not be able to see these pages
 * improve data lineage: insert changelog on grants to see their history (who created them and when, who updated them and when, ...)
 * implement a permission gate; every action the user does (video-view, image:export, ...), the application asks to the backend if the user has that capability granted on that scope
+* implement "super admin" capabilities, a set of capabilities that differ from normal users and are more focused on whether the super admin can create/edit/delete a grant
+* implement a limitation on the capabilities the super admin/ops lead should can assign based on its own capabilities; this is already specified in the requirements, but for lack of time it was not implemented
 * improve scopes management; in this moment the user can assing a scope choosing between an org, a client or a project; that's it; but if the assigned scope is an organization with multiple clients and projects, the application should ask the user if he wants the user to see all the clients and projects under tht organization, or if he wants to select a subset;
 * implement a more sophisticated error management
 * seed more data to handle different cases
