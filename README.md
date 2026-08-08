@@ -44,20 +44,21 @@ Go to the backend folder (users-access-backend); in /data/resources.json, add a 
 
 ```json
 {
-    "id": 8,
+    "id": lastId+1,
     "name": "new resource name"
 }
 ```
 
 ## With More Time
 
-* implement the "fail on demand" of the API calls
-* implement a login with a check whether the user is an "ops lead" or "super amin"; if he is, he can see and work in `/access-editor` and `/organization-members`; if he is not, he will not be able to see these pages
-* improve data lineage: insert changelog on grants to see their history (who created them and when, who updated them and when, ...)
-* implement a permission gate; every action the user does (video-view, image:export, ...), the application asks to the backend if the user has that capability granted on that scope
-* implement "super admin" capabilities, a set of capabilities that differ from normal users and are more focused on whether the super admin can create/edit/delete a grant
-* implement a limitation on the capabilities the super admin/ops lead should can assign based on its own capabilities; this is already specified in the requirements, but for lack of time it was not implemented
-* improve scopes management; in this moment the user can assing a scope choosing between an org, a client or a project; that's it; but if the assigned scope is an organization with multiple clients and projects, the application should ask the user if he wants the user to see all the clients and projects under tht organization, or if he wants to select a subset;
-* implement a more sophisticated error management
-* seed more data to handle different cases
-* implement Auth on endpoints: the backend endpoints return error 401 or 403 in case no token / non-valid token is given
+* Implement the "fail on demand" of the API calls
+* Implement API keys generation and deletion; implement a mechanism that invalidates/freezes the API key when the user that generated it is deleted
+* Implement a login with a check whether the user is an "ops lead" or "super admin"; if he is, he can see and work in `/access-editor` and `/organization-members`; if he is not, he will not be able to see these pages
+* Improve data lineage: insert changelog on grants to see their history (who created them and when, who updated them and when, ...)
+* Implement a permission gate; every action the user does (video-view, image:export, ...), the application asks to the backend if the user has that capability granted on that scope
+* Implement "super admin" capabilities, a set of capabilities that differ from normal users and are more focused on whether the super admin can create/edit/delete a grant
+* Implement a limitation on the capabilities the super admin/ops lead should can assign based on its own capabilities; this is already specified in the requirements, but for lack of time it was not implemented
+* Improve scopes management; in this moment the user can assing a scope choosing between an org, a client or a project; that's it; but if the assigned scope is an organization with multiple clients and projects, the application should ask the user if he wants the user to see all the clients and projects under tht organization, or if he wants to select a subset;
+* Implement a more sophisticated error management
+* Seed more data to handle different cases
+* Implement Auth on endpoints: the backend endpoints return error 401 or 403 in case no token / non-valid token is given
